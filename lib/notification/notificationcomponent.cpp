@@ -158,12 +158,6 @@ void NotificationComponent::FlappingChangedHandler(const Checkable::Ptr& checkab
 
 		// Check Filters here
 		notification->BeginExecuteNotification(ntype, checkable->GetLastCheckResult(), false, false);
-
-		// Queue Renotifications
-		if (ntype != NotificationFlappingEnd) {
-			m_IdleNotifications.insert(GetNotificationScheduleInfo(notification));
-			m_CV.notify_all();
-		}
 	}
 }
 
@@ -274,35 +268,43 @@ bool NotificationComponent::HardStateNotificationCheck(const Checkable::Ptr& che
 
 void NotificationComponent::SendMessageHelper(const Notification::Ptr& notification, NotificationType type, bool reminder)
 {
-	if (!notification->IsActive()) {
+	if (notification->IsPaused()) {
 		Log(LogCritical, "DEBUG")
-			<< notification->GetName() << " is inactive";
+			<< notification->GetName() << " is paused";
 		boost::mutex::scoped_lock lock(m_Mutex);
 		auto it = m_PendingNotifications.find(notification);
 		if (it != m_PendingNotifications.end()) {
 			m_PendingNotifications.erase(it);
 		}
-		notification->SetNextNotification(Utility::GetTime() + 60);
-		m_IdleNotifications.insert(GetNotificationScheduleInfo(notification));
 		m_CV.notify_all();
 
 		return;
 	}
-	// Check if we need to send here??
-	if (HardStateNotificationCheck(notification->GetCheckable()))
+
+	Log(LogCritical, "DEBUG") << "Executing Next Message at " << Utility::FormatDateTime("%Y-%m-%d %H:%M:%S %z", notification->GetNextNotification());
+
+
+	if (type == NotificationProblem) {
+		if (HardStateNotificationCheck(notification->GetCheckable()))
+			notification->BeginExecuteNotification(type, notification->GetCheckable()->GetLastCheckResult(), false, reminder);
+		else
+			notification->SetNextNotification(notification->GetNextNotification() + notification->GetNextNotification());
+
+	} else if (type == NotificationRecovery) {
+		if (HardStateNotificationCheck(notification->GetCheckable()))
+			notification->BeginExecuteNotification(type, notification->GetCheckable()->GetLastCheckResult(), false, reminder);
+	} else {
 		notification->BeginExecuteNotification(type, notification->GetCheckable()->GetLastCheckResult(), false, reminder);
-	else
-		notification->SetNextNotification(notification->GetNextNotification() + notification->GetNextNotification());
+	}
+
 
 	boost::mutex::scoped_lock lock(m_Mutex);
 	auto it = m_PendingNotifications.find(notification);
 
-	Log(LogCritical, "DEBUG") << "Execute Next Message at " <<Utility::FormatDateTime("%Y-%m-%d %H:%M:%S %z", notification->GetNextNotification());
-
 	if (it != m_PendingNotifications.end()) {
 		m_PendingNotifications.erase(it);
 
-		if (notification->IsActive())
+		if (notification->IsActive() && type == NotificationProblem)
 			m_IdleNotifications.insert(GetNotificationScheduleInfo(notification));
 
 		m_CV.notify_all();
