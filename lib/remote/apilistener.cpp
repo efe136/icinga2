@@ -27,6 +27,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/spawn.hpp>
 #include <boost/asio/ssl/context.hpp>
+#include <boost/asio/error.hpp>
 #include <boost/system/error_code.hpp>
 #include <climits>
 #include <fstream>
@@ -395,7 +396,7 @@ bool ApiListener::AddListener(const String& node, const String& service)
 		}
 	} catch (const std::exception& ex) {
 		Log(LogCritical, "ApiListener")
-			<< "Cannot bind TCP socket for host '" << node << "' on port '" << service << "': " << DiagnosticInformation(ex, false);
+			<< "Cannot bind TCP socket for host '" << node << "' on port '" << service << "': " << ex.what();
 		return false;
 	}
 
@@ -428,7 +429,7 @@ void ApiListener::ListenerCoroutineProc(boost::asio::yield_context yc, const std
 			asio::spawn(io, [this, sslConn](asio::yield_context yc) { NewClientHandler(yc, sslConn, String(), RoleServer); });
 		} catch (const std::exception& ex) {
 			Log(LogCritical, "ApiListener")
-				<< "Cannot accept new connection: " << DiagnosticInformation(ex, false);
+				<< "Cannot accept new connection: " << ex.what();
 		}
 	}
 }
@@ -521,14 +522,6 @@ void ApiListener::NewClientHandlerInternal(boost::asio::yield_context yc, const 
 
 	auto& sslConn (client->next_layer());
 
-	try {
-		sslConn.async_handshake(role == RoleClient ? sslConn.client : sslConn.server, yc);
-	} catch (const std::exception& ex) {
-		Log(LogCritical, "ApiListener")
-			<< "Client TLS handshake failed (" << conninfo << "): " << DiagnosticInformation(ex, false);
-		return;
-	}
-
 	bool willBeShutDown = false;
 
 	Defer shutDownIfNeeded ([&sslConn, &willBeShutDown, &yc]() {
@@ -536,6 +529,24 @@ void ApiListener::NewClientHandlerInternal(boost::asio::yield_context yc, const 
 			sslConn.async_shutdown(yc);
 		}
 	});
+
+	boost::system::error_code ec;
+
+	sslConn.async_handshake(role == RoleClient ? sslConn.client : sslConn.server, yc[ec]);
+
+	if (ec) {
+		// https://github.com/boostorg/beast/issues/915
+		// Google Chrome 73+ seems not close the connection properly, https://stackoverflow.com/questions/56272906/how-to-fix-certificate-unknown-error-from-chrome-v73
+		if (ec == asio::ssl::error::stream_truncated) {
+			Log(LogNotice, "ApiListener")
+				<< "TLS stream was truncated, ignoring connection from " << conninfo;
+			return;
+		}
+
+		Log(LogCritical, "ApiListener")
+			<< "Client TLS handshake failed (" << conninfo << "): " <<  ec.message();
+		return;
+	}
 
 	std::shared_ptr<X509> cert (sslConn.GetPeerCertificate());
 	bool verify_ok = false;
@@ -605,11 +616,11 @@ void ApiListener::NewClientHandlerInternal(boost::asio::yield_context yc, const 
 			if (client->async_fill(yc[ec]) == 0u) {
 				if (identity.IsEmpty()) {
 					Log(LogInformation, "ApiListener")
-						<< "No data received on new API connection. "
+						<< "No data received on new API connection " << conninfo << ". "
 						<< "Ensure that the remote endpoints are properly configured in a cluster setup.";
 				} else {
 					Log(LogWarning, "ApiListener")
-						<< "No data received on new API connection for identity '" << identity << "'. "
+						<< "No data received on new API connection " << conninfo << " for identity '" << identity << "'. "
 						<< "Ensure that the remote endpoints are properly configured in a cluster setup.";
 				}
 
