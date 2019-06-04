@@ -127,7 +127,24 @@ The deprecated `concurrent_checks` attribute in the [checker feature](09-object-
 has no effect anymore if set. Please use the [MaxConcurrentChecks](17-language-reference.md#icinga-constants-global-config)
 constant in [constants.conf](04-configuring-icinga-2.md#constants-conf) instead.
 
+### Runtime <a id="upgrading-to-2-11-runtime"></a>
+
+[Downtime objects](#objecttype-downtime) now store the `sequence_id` attribute.
+This is used with multiple downtimes generated from one API action,
+e.g. `child_options` or `all_services` and allows removal
+in one shot later.
+
 ### REST API <a id="upgrading-to-2-11-api"></a>
+
+#### Actions <a id="upgrading-to-2-11-api-config-packages"></a>
+
+The [schedule-downtime](#icinga2-api-actions-schedule-downtime-host-all-services)
+action supports the `all_services` parameter for Host types. Defaults to false.
+
+The [schedule-downtime](#icinga2-api-actions-schedule-downtime)
+action also generates a `sequence_id` returned to the
+client.
+This can be used as filter for the [remove-downtime](#icinga2-api-actions-remove-downtime-filter-attributes) action.
 
 #### Config Packages <a id="upgrading-to-2-11-api-config-packages"></a>
 
