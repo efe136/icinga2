@@ -21,6 +21,8 @@ void NotificationComponent::OnConfigLoaded()
 
 	Checkable::OnAcknowledgementSet.connect(std::bind(&NotificationComponent::SetAcknowledgementHandler, this, _1, _2, _3));
 
+	Downtime::OnDowntimeTriggered.connect(std::bind(&NotificationComponent::TriggerDowntimeHandler, this, _1));
+	Downtime::OnDowntimeRemoved.connect(std::bind(&NotificationComponent::RemoveDowntimeHandler, this, _1));
 	/* This is never called and does not work currently */
 	Notification::OnNextNotificationChanged.connect(std::bind(&NotificationComponent::NextNotificationChangedHandler, this, _1, _2));
 
@@ -164,8 +166,25 @@ void NotificationComponent::FlappingChangedHandler(const Checkable::Ptr& checkab
 void NotificationComponent::SetAcknowledgementHandler(const Checkable::Ptr& checkable, const String& author, const String& text)
 {
 	for (const Notification::Ptr notification : checkable->GetNotifications()) {
-		notification->BeginExecuteNotification(NotificationAcknowledgement, checkable->GetLastCheckResult(), false, false, author,text);
+		SendMessageHelper(notification, NotificationAcknowledgement, false);
 	}
+}
+
+void NotificationComponent::TriggerDowntimeHandler(const Downtime::Ptr& downtime)
+{
+	Log(LogCritical, "DEBUG")
+			<< "Downtime " << downtime->GetName() << " has been triggered.";
+	Checkable::Ptr checkable = downtime->GetCheckable();
+
+	for (const Notification::Ptr notification : checkable->GetNotifications()) {
+		SendMessageHelper(notification, NotificationDowntimeStart, false);
+	}
+}
+
+void NotificationComponent::RemoveDowntimeHandler(const Downtime::Ptr& downtime)
+{
+	Log(LogCritical, "DEBUG")
+		<< "Downtime " << downtime->GetName() << " has been removed.";
 }
 
 void NotificationComponent::NotificationThreadProc()

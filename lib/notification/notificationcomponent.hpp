@@ -76,6 +76,9 @@ private:
 	void StateChangeHandler(const Checkable::Ptr& checkable, const CheckResult::Ptr& cr, StateType type);
 	void FlappingChangedHandler(const Checkable::Ptr& checkable);
 	void SetAcknowledgementHandler(const Checkable::Ptr& checkable, const String& author, const String& text);
+	void TriggerDowntimeHandler(const Downtime::Ptr& downtime);
+	void RemoveDowntimeHandler(const Downtime::Ptr& downtime);
+
 
 	void ObjectHandler(const ConfigObject::Ptr& object);
 	void NextNotificationChangedHandler(const Notification::Ptr& notification, const MessageOrigin::Ptr& origin);
